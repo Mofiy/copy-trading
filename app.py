@@ -1,7 +1,7 @@
 from binance.cm_futures import CMFutures
 import logging
 import os
-KEY_FILE = 'keys.txt'
+KEY_FILE = 'credentials.txt'
 
 # Загрузить данные токена
 if os.path.exists(KEY_FILE):
