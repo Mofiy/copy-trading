@@ -1,39 +1,75 @@
-from binance.cm_futures import CMFutures
-import logging
-import os
-KEY_FILE = 'credentials.txt'
+import threading
+import time
 
-# Загрузить данные токена
-if os.path.exists(KEY_FILE):
-    f = open(KEY_FILE, "r")
-    contents = []
-    if f.mode == 'r':
-        contents = f.read().split('\n')
-    BINANCE_KEYS = dict(KEY=contents[0], SECRET=contents[1])
-else:
-    logging.error("Did not find token file")
-    exit(1)
+from binance import Binance
+import dearpygui.dearpygui as dpg
+
+orders = []
+COIN = 'USDT'
+PAIR = 'BTCUSDT'
+ORDER_HEADER = ['orderId',
+                'symbol',
+                'status',
+                'avgPrice',
+                'cumQuote',
+                'side',
+                'time']
+
+client = Binance('binance_keys.txt')
+
+dpg.create_context()
+dpg.create_viewport(title='Copy trading')
+dpg.setup_dearpygui()
+
+user_data = client.GetAccountData()
+for assets in user_data["assets"]:
+    if assets['asset'] == COIN:
+        with dpg.window(label=assets['asset'], no_close=True):
+            for item in assets:
+                if item == 'asset':
+                    dpg.add_checkbox(default_value=True, tag="checkbox_" + assets[item])
+                else:
+                    if item == 'marginAvailable':
+                        break
+                    dpg.add_text(item)
+                    dpg.add_input_text(source=assets[item], tag=assets['asset'] + '_' + item)
 
 
-cm_futures_client = CMFutures()
+with dpg.window(label='table orders', no_close=True) as orders:
+    orders = client.GetAllOrderInfo(symbol=PAIR)
+    with dpg.table():
+        for _ in ORDER_HEADER:
+            dpg.add_table_column(width_stretch=True)
+        for order in orders:
+            dpg.add_table_row()
+            with dpg.table_row():
+                for item in order:
+                    if item in ORDER_HEADER:
+                        dpg.add_text(f"{order[item]}")
 
-# get server time
-print(cm_futures_client.time())
 
-cm_futures_client = CMFutures(key=BINANCE_KEYS['KEY'], secret=BINANCE_KEYS['SECRET'])
+def background_theme():
+    account_info_updater_thread = threading.Thread(name="account_info_updater", target=account_info_updater, args=(),
+                                                   daemon=True)
+    account_info_updater_thread.start()
 
-# Get account information
-print(cm_futures_client.account())
 
-# Post a new order
-params = {
-    'symbol': 'BTCUSDT',
-    'side': 'SELL',
-    'type': 'LIMIT',
-    'timeInForce': 'GTC',
-    'quantity': 0.002,
-    'price': 59808
-}
+def account_info_updater():
+    # Function loops the background theme
+    while True:
+        user_data = client.GetAccountData()
+        for assets in user_data["assets"]:
+            if assets['asset'] == COIN:
+                if dpg.get_value(item="checkbox_" + assets['asset']) == True:
+                    for item in assets:
+                        if item == 'marginAvailable': break
+                        if item != 'asset':
+                            dpg.set_value(item=assets['asset'] + '_' + item, value=assets[item])
+        time.sleep(1)
 
-response = cm_futures_client.new_order(**params)
-print(response)
+
+background_theme()
+
+dpg.show_viewport()
+dpg.start_dearpygui()
+dpg.destroy_context()
